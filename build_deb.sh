@@ -3,9 +3,9 @@ set -e
 
 # Package info
 PACKAGE_NAME="keyboard-key-display"
-VERSION="1.0.0"
+VERSION="0.0.1"
 ARCH="all"
-MAINTAINER="Your Name <your.email@example.com>"
+MAINTAINER="ThinkReally <2507164880@qq.com>"
 DESCRIPTION="Linux desktop keyboard key display application"
 
 # Build directories
@@ -73,14 +73,22 @@ can_read_input() {
 }
 
 if ! can_read_input; then
+    TARGET_USER="${SUDO_USER:-${USER:-$(id -un)}}"
     if command -v pkexec >/dev/null 2>&1; then
-        pkexec "${APP_DIR}/grant-input-access.sh" "$USER"
+        pkexec "${APP_DIR}/grant-input-access.sh" "$TARGET_USER"
     else
         echo "Keyboard input permission is required. Please run:" >&2
-        echo "  sudo usermod -aG input $USER" >&2
+        echo "  sudo usermod -aG input $TARGET_USER" >&2
         echo "Then log out and log back in." >&2
         exit 1
     fi
+fi
+
+if ! can_read_input; then
+    echo "Keyboard input permission is still missing." >&2
+    echo "Please run: sudo usermod -aG input ${USER:-$(id -un)}" >&2
+    echo "Then log out and log back in." >&2
+    exit 1
 fi
 
 cd "$APP_DIR"
@@ -130,8 +138,8 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: python3, python3-tk
-Recommends: policykit-1, acl
+Depends: python3, python3-tk, acl
+Recommends: policykit-1
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
  A Linux desktop keyboard key display application that shows
