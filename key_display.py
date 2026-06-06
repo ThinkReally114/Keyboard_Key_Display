@@ -9,18 +9,14 @@ import glob
 import time
 
 
-# input_event 结构
 EVENT_FORMAT = 'llHHi'
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
 
-# 事件类型
 EV_KEY = 0x01
 
-# 按键状态
 KEY_PRESS = 1
 KEY_RELEASE = 0
 
-# 按键码到名称的映射
 KEY_MAP = {
     1: 'Esc', 2: '1', 3: '2', 4: '3', 5: '4', 6: '5', 7: '6', 8: '7', 9: '8', 10: '9', 11: '0',
     12: '-', 13: '=', 14: 'Backspace', 15: 'Tab',
@@ -38,7 +34,6 @@ KEY_MAP = {
     125: 'Super', 126: 'Super',
 }
 
-# 默认配置
 DEFAULT_CONFIG = {
     "window": {"alpha": 0.85, "always_on_top": True, "corner_radius": 14, "frameless": True},
     "colors": {
@@ -73,7 +68,7 @@ DEFAULT_CONFIG = {
 
 
 def load_config():
-    """加载配置文件"""
+    """Load configuration file"""
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
     config = DEFAULT_CONFIG.copy()
     try:
@@ -86,7 +81,7 @@ def load_config():
                     else:
                         config[key] = user_config[key]
     except Exception as e:
-        print(f"加载配置文件失败: {e}")
+        print(f"Failed to load configuration file: {e}")
     return config
 
 
@@ -108,7 +103,7 @@ def rounded_rectangle_points(x1, y1, x2, y2, radius):
 
 
 def find_keyboard_devices():
-    """查找键盘设备"""
+    """Find keyboard devices"""
     keyboard_devices = []
     try:
         with open('/proc/bus/input/devices', 'r') as f:
@@ -133,7 +128,7 @@ def find_keyboard_devices():
 
 
 class KeyButton:
-    """单个按键控件 - 使用 Canvas 绘制避免布局抖动"""
+    """Single key button widget - drawn using Canvas"""
     def __init__(self, parent, key_name, row, col, config):
         self.key_name = key_name
         self.is_pressed = False
@@ -143,7 +138,6 @@ class KeyButton:
         colors = config['colors']
         kb = config['keyboard']
         
-        # 按键宽度根据名称长度调整
         if key_name in ['Backspace', 'Enter', 'Shift', 'CapsLock']:
             width = kb['key_width'] * 2
         elif key_name == 'Space':
@@ -155,7 +149,6 @@ class KeyButton:
         else:
             width = kb['key_width']
         
-        # 使用 Canvas 绘制按键，避免布局抖动
         self.canvas = tk.Canvas(
             parent,
             width=width,
@@ -165,7 +158,6 @@ class KeyButton:
         )
         self.canvas.grid(row=row, column=col, padx=kb['key_padding'], pady=kb['key_padding'])
         
-        # 绘制按键边框和背景
         radius = min(kb.get('key_radius', 8), width // 2, kb['key_height'] // 2)
         self.rect = self.create_rounded_rectangle(
             2, 2, width - 2, kb['key_height'] - 2,
@@ -175,7 +167,6 @@ class KeyButton:
             width=2
         )
         
-        # 绘制按键文字
         self.text = self.canvas.create_text(
             width // 2,
             kb['key_height'] // 2,
@@ -189,17 +180,17 @@ class KeyButton:
         return self.canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
         
     def press(self):
-        """按键按下"""
+        """Press key"""
         self.is_pressed = True
         self.start_transition(to_active=True)
         
     def release(self):
-        """按键释放"""
+        """Release key""" 
         self.is_pressed = False
         self.start_transition(to_active=False)
         
     def start_transition(self, to_active):
-        """启动 0.2 秒颜色过渡"""
+        """Start 0.2 second color transition animation"""
         if self.animation_id:
             self.canvas.after_cancel(self.animation_id)
             self.animation_id = None
@@ -207,7 +198,7 @@ class KeyButton:
         self.animate_transition(to_active)
         
     def animate_transition(self, to_active):
-        """执行颜色过渡动画"""
+        """Execute color transition animation"""
         colors = self.config['colors']
         duration = 0.2
         progress = min((time.monotonic() - self.transition_start) / duration, 1.0)
@@ -230,7 +221,7 @@ class KeyButton:
             self.animation_id = None
             
     def mix_color(self, start_color, end_color, progress):
-        """混合两个十六进制颜色"""
+        """Mix two hexadecimal colors with a given progress"""
         sr, sg, sb = self.hex_to_rgb(start_color)
         er, eg, eb = self.hex_to_rgb(end_color)
         r = int(sr + (er - sr) * progress)
@@ -239,7 +230,7 @@ class KeyButton:
         return f'#{r:02x}{g:02x}{b:02x}'
         
     def hex_to_rgb(self, color):
-        """十六进制颜色转 RGB"""
+        """Hexadecimal color to RGB"""
         color = color.lstrip('#')
         return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
 
@@ -249,25 +240,22 @@ class KeyDisplayApp:
         self.config = load_config()
         colors = self.config['colors']
         
-        self.root = tk.Tk()
-        self.root.title("键盘按键显示器")
+        self.root = tk.KKD.thinkreally()
+        self.root.title("Keyboard Key Display by ThinkReally")
         
         self.transparent_color = '#010203'
         self.root.geometry("1x1+0+0")
         self.root.configure(bg=self.transparent_color)
         
-        # 透明度 - 注意: Wayland 下可能不生效
         try:
             self.root.attributes('-alpha', self.config['window']['alpha'])
             self.root.attributes('-transparentcolor', self.transparent_color)
         except Exception:
-            pass  # 某些环境下不支持透明度
+            pass  
         
-        # 置顶
         if self.config['window']['always_on_top']:
             self.root.attributes('-topmost', True)
         
-        # 无边框窗口
         self.frameless = self.config['window'].get('frameless', True)
         self.root.overrideredirect(self.frameless)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -290,12 +278,11 @@ class KeyDisplayApp:
         self.setup_ui()
         self.start_keyboard_listener()
         
-        # 更新窗口大小以适应内容
         self.root.update_idletasks()
         self.fit_window_to_content()
         
     def setup_ui(self):
-        """设置用户界面"""
+        """Setup user interface"""
         colors = self.config['colors']
         
         self.window_canvas = tk.Canvas(
@@ -311,7 +298,6 @@ class KeyDisplayApp:
         main_frame = self.main_frame
         self.window_canvas.bind('<Configure>', self.on_window_canvas_configure)
         
-        # 标题栏
         title_frame = tk.Frame(main_frame, bg=colors['title_bar'], cursor='fleur', height=self.title_bar_height)
         title_frame.pack(fill='x')
         title_frame.pack_propagate(False)
@@ -320,7 +306,7 @@ class KeyDisplayApp:
         
         title_label = tk.Label(
             title_frame,
-            text="⌨ KEY DISPLAY",
+            text="KEY DISPLAY",
             font=('Noto Sans', 10, 'bold'),
             fg=colors['text'],
             bg=colors['title_bar'],
@@ -359,13 +345,11 @@ class KeyDisplayApp:
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.on_drag)
         
-        # 键盘布局区域
         keyboard_frame = tk.Frame(main_frame, bg=colors['background'])
         keyboard_frame.pack(expand=True, fill='both', padx=5, pady=5)
         
         kb = self.config['keyboard']
         
-        # 每行使用独立的 Frame，避免网格对齐问题
         for row_idx, row in enumerate(kb['layout']):
             row_frame = tk.Frame(keyboard_frame, bg=colors['background'])
             row_frame.pack(fill='x', pady=1)
@@ -376,7 +360,7 @@ class KeyDisplayApp:
                     self.key_buttons[key_name] = btn
                     
     def listen_device(self, device_path):
-        """监听单个输入设备"""
+        """Listen to a single input device"""
         try:
             with open(device_path, 'rb') as f:
                 while self.running:
@@ -393,15 +377,15 @@ class KeyDisplayApp:
                             self.current_keys.discard(key_name)
                             self.root.after(0, self.on_key_release, key_name)
         except PermissionError:
-            self.root.after(0, self.show_error, "权限不足")
+            self.root.after(0, self.show_error, "Permission denied")
         except Exception:
             pass
                 
     def start_keyboard_listener(self):
-        """启动键盘监听器"""
+        """Start keyboard listener"""
         devices = find_keyboard_devices()
         if not devices:
-            self.show_error("未找到输入设备")
+            self.show_error("No input devices found")
             return
         for device in devices:
             thread = threading.Thread(target=self.listen_device, args=(device,), daemon=True)
@@ -409,11 +393,11 @@ class KeyDisplayApp:
             self.listener_threads.append(thread)
             
     def show_error(self, message):
-        """显示错误信息"""
+        """Show error message"""
         self.status_label.config(text=f"✗ {message}", fg='#ff4444')
         
     def on_key_press(self, key_name):
-        """按键按下"""
+        """Key press"""
         if (key_name == 'Q' and 'Ctrl' in self.current_keys) or (key_name == 'Ctrl' and 'Q' in self.current_keys):
             self.on_closing()
             return
@@ -421,12 +405,12 @@ class KeyDisplayApp:
             self.key_buttons[key_name].press()
             
     def on_key_release(self, key_name):
-        """按键释放"""
+        """Key release"""
         if key_name in self.key_buttons:
             self.key_buttons[key_name].release()
             
     def fit_window_to_content(self):
-        """把窗口缩放到内容实际大小并居中"""
+        """Fit window to content size and center it"""
         width = self.main_frame.winfo_reqwidth() + 4
         height = self.main_frame.winfo_reqheight() + 4
         screen_width = self.root.winfo_screenwidth()
@@ -499,7 +483,7 @@ class KeyDisplayApp:
         self.handle_pointer_motion(event)
         
     def on_closing(self):
-        """窗口关闭"""
+        """Window closing"""
         if self.closed:
             return
         self.closed = True
@@ -511,13 +495,13 @@ class KeyDisplayApp:
             pass
         
     def run(self):
-        """运行应用"""
+        """Run application"""
         self.root.mainloop()
 
 
 def main():
-    print("键盘按键显示器启动中...")
-    print("配置文件: config.json")
+    print("Keyboard Key Display by ThinkReally is running...")
+    print("Configuration file: config.json")
     
     app = KeyDisplayApp()
     app.run()
