@@ -37,7 +37,6 @@ chmod +x "${DEB_DIR}/usr/lib/${PACKAGE_NAME}/grant-input-read.sh"
 
 cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
 #!/bin/bash
-set -e
 
 APP_DIR="/usr/share/keyboard-key-display"
 APP_FILE="${APP_DIR}/key_display.py"
@@ -52,16 +51,25 @@ can_read_input() {
 }
 
 if ! can_read_input; then
+    # Try pkexec (graphical auth dialog)
     if command -v pkexec >/dev/null 2>&1; then
-        pkexec "$HELPER"
-    else
-        x-terminal-emulator -e bash -c "echo 'Keyboard input permission is required.'; echo 'Please run: sudo chmod a+r /dev/input/event*'; read -p 'Press Enter to exit...'"
-        exit 1
+        pkexec "$HELPER" && GRANTED=1 || GRANTED=0
+    fi
+
+    # Fallback: sudo in terminal
+    if [ "${GRANTED:-0}" != "1" ] || ! can_read_input; then
+        if command -v x-terminal-emulator >/dev/null 2>&1; then
+            x-terminal-emulator -e bash -c "sudo chmod a+r /dev/input/event*; echo 'Done. Close this window.'; sleep 2"
+        fi
     fi
 fi
 
 if ! can_read_input; then
-    notify-send "Keyboard Key Display" "Permission denied. Run: sudo chmod a+r /dev/input/event*" 2>/dev/null || true
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --text="Keyboard input permission denied.\n\nPlease run:\nsudo usermod -aG input \$USER\nThen log out and log back in." 2>/dev/null
+    elif command -v notify-send >/dev/null 2>&1; then
+        notify-send "Keyboard Key Display" "Permission denied" 2>/dev/null
+    fi
     exit 1
 fi
 
@@ -110,7 +118,7 @@ Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Depends: python3, python3-tk
-Recommends: policykit-1
+Recommends: policykit-1, zenity
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
  A Linux desktop keyboard key display application that shows
