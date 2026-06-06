@@ -29,19 +29,41 @@ cp key_display.py "${DEB_DIR}/usr/share/${PACKAGE_NAME}/"
 cp config.json "${DEB_DIR}/usr/share/${PACKAGE_NAME}/"
 cp -r icons "${DEB_DIR}/usr/share/${PACKAGE_NAME}/" 2>/dev/null || true
 
-# Create launcher script with pkexec
-cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
+# Create wrapper script that preserves environment
+cat > "${DEB_DIR}/usr/share/${PACKAGE_NAME}/run-with-env.sh" << 'EOF'
 #!/bin/bash
+# This script is executed by pkexec with root privilege
+# Environment variables are passed as arguments
+
 cd /usr/share/keyboard-key-display
 
-# Pass display environment variables to root process
-ENV_ARGS="DISPLAY=$DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR WAYLAND_DISPLAY=$WAYLAND_DISPLAY XAUTHORITY=$XAUTHORITY"
+# Restore display environment from arguments
+export DISPLAY="$1"
+export XDG_RUNTIME_DIR="$2"
+export WAYLAND_DISPLAY="$3"
+export XAUTHORITY="$4"
 
-# Try pkexec first (graphical sudo)
-if command -v pkexec &> /dev/null; then
-    pkexec env $ENV_ARGS /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
+# Run the application
+exec /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py
+EOF
+chmod +x "${DEB_DIR}/usr/share/${PACKAGE_NAME}/run-with-env.sh"
+
+# Create launcher script
+cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
+#!/bin/bash
+
+# Check if we're in input group
+if groups | grep -q '\binput\b'; then
+    # User is in input group, run directly
+    cd /usr/share/keyboard-key-display
+    exec /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
 else
-    sudo -E /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
+    # Need root permission, use pkexec with environment wrapper
+    pkexec /usr/share/keyboard-key-display/run-with-env.sh \
+        "$DISPLAY" \
+        "$XDG_RUNTIME_DIR" \
+        "$WAYLAND_DISPLAY" \
+        "$XAUTHORITY"
 fi
 EOF
 chmod +x "${DEB_DIR}/usr/bin/${PACKAGE_NAME}"
@@ -64,23 +86,15 @@ cat > "${DEB_DIR}/usr/share/polkit-1/actions/com.keyboard-key-display.policy" <<
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_self</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/python3</annotate>
-    <annotate key="org.freedesktop.policykit.exec.argv1">/usr/share/keyboard-key-display/key_display.py</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/share/keyboard-key-display/run-with-env.sh</annotate>
   </action>
 </policyconfig>
 EOF
 
-# Create sudoers rule (no password for current user)
-cat > "${DEB_DIR}/etc/sudoers.d/keyboard-key-display" << EOF
-# Allow running keyboard-key-display without password
-# This file is created during package installation
-%input ALL=(ALL) NOPASSWD: /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py
-EOF
-chmod 440 "${DEB_DIR}/etc/sudoers.d/keyboard-key-display"
-
 # Create desktop entry
 cat > "${DEB_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop" << EOF
 [Desktop Entry]
+Name=Keyboard Key Display
 Comment=Display keyboard keys on screen
 Exec=${PACKAGE_NAME}
 Type=Application
@@ -109,29 +123,22 @@ cat > "${DEB_DIR}/DEBIAN/postinst" << 'EOF'
 #!/bin/bash
 set -e
 
-# Add user to input group for keyboard access
 echo "=== Keyboard Key Display installed ==="
 echo ""
-echo "To use without sudo, add your user to the 'input' group:"
+echo "To use without password prompt, add your user to the 'input' group:"
 echo "  sudo usermod -aG input $USER"
 echo "Then log out and log back in."
 echo ""
-echo "Alternatively, the application will prompt for password using polkit."
+echo "If not in 'input' group, the application will prompt for password."
 
 exit 0
 EOF
 chmod +x "${DEB_DIR}/DEBIAN/postinst"
 
-# Create postrm script to clean up sudoers
+# Create postrm script
 cat > "${DEB_DIR}/DEBIAN/postrm" << 'EOF'
 #!/bin/bash
 set -e
-
-# Clean up sudoers file
-if [ -f /etc/sudoers.d/keyboard-key-display ]; then
-    rm -f /etc/sudoers.d/keyboard-key-display
-fi
-
 exit 0
 EOF
 chmod +x "${DEB_DIR}/DEBIAN/postrm"
@@ -146,3 +153,4 @@ mv "${BUILD_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb" .
 rm -rf "${BUILD_DIR}"
 
 echo "Build complete: ${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
+
