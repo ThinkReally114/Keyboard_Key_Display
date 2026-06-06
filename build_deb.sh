@@ -98,9 +98,9 @@ cat > "${DEB_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop" << EOF
 [Desktop Entry]
 Name=Keyboard Key Display
 Comment=Display keyboard keys on screen
-Exec=${PACKAGE_NAME}
+Exec=x-terminal-emulator -e bash -c "cd /usr/share/keyboard-key-display && sudo -E python3 key_display.py; read -p 'Press Enter to exit...'"
 Type=Application
-Terminal=false
+Terminal=true
 Categories=Utility;Accessibility;
 Icon=${PACKAGE_NAME}
 EOF
