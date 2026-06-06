@@ -21,6 +21,7 @@ mkdir -p "${DEB_DIR}/usr/share/${PACKAGE_NAME}"
 mkdir -p "${DEB_DIR}/usr/bin"
 mkdir -p "${DEB_DIR}/usr/share/applications"
 mkdir -p "${DEB_DIR}/usr/share/polkit-1/actions"
+mkdir -p "${DEB_DIR}/etc/sudoers.d"
 mkdir -p "${DEB_DIR}/usr/share/icons/hicolor/256x256/apps"
 
 # Copy application files
@@ -33,14 +34,15 @@ cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
 #!/bin/bash
 cd /usr/share/keyboard-key-display
 
-# Try pkexec first (graphical sudo), fall back to regular sudo
+# Try pkexec first (graphical sudo)
 if command -v pkexec &> /dev/null; then
-    pkexec python3 key_display.py "$@"
+    pkexec /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
 else
-    sudo -E python3 key_display.py "$@"
+    sudo -E /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
 fi
 EOF
 chmod +x "${DEB_DIR}/usr/bin/${PACKAGE_NAME}"
+
 # Create polkit policy file
 cat > "${DEB_DIR}/usr/share/polkit-1/actions/com.keyboard-key-display.policy" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +67,14 @@ cat > "${DEB_DIR}/usr/share/polkit-1/actions/com.keyboard-key-display.policy" <<
 </policyconfig>
 EOF
 
+# Create sudoers rule (no password for current user)
+cat > "${DEB_DIR}/etc/sudoers.d/keyboard-key-display" << EOF
+# Allow running keyboard-key-display without password
+# This file is created during package installation
+%input ALL=(ALL) NOPASSWD: /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py
+EOF
+chmod 440 "${DEB_DIR}/etc/sudoers.d/keyboard-key-display"
+
 # Create desktop entry
 cat > "${DEB_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop" << EOF
 [Desktop Entry]
@@ -78,7 +88,7 @@ Icon=${PACKAGE_NAME}
 EOF
 
 # Create control file
-cat > "${DEB_DIR}/DEBIAN/control" << EOF
+cat > "${DEB_DIR}/DEBIAN/control" < EOF
 Package: ${PACKAGE_NAME}
 Version: ${VERSION}
 Section: utils
@@ -98,8 +108,10 @@ cat > "${DEB_DIR}/DEBIAN/postinst" << 'EOF'
 set -e
 
 # Add user to input group for keyboard access
-echo "To use keyboard-key-display without sudo, add your user to the 'input' group:"
-echo "  sudo usermod -aG input \$USER"
+echo "=== Keyboard Key Display installed ==="
+echo ""
+echo "To use without sudo, add your user to the 'input' group:"
+echo "  sudo usermod -aG input $USER"
 echo "Then log out and log back in."
 echo ""
 echo "Alternatively, the application will prompt for password using polkit."
@@ -107,6 +119,20 @@ echo "Alternatively, the application will prompt for password using polkit."
 exit 0
 EOF
 chmod +x "${DEB_DIR}/DEBIAN/postinst"
+
+# Create postrm script to clean up sudoers
+cat > "${DEB_DIR}/DEBIAN/postrm" << 'EOF'
+#!/bin/bash
+set -e
+
+# Clean up sudoers file
+if [ -f /etc/sudoers.d/keyboard-key-display ]; then
+    rm -f /etc/sudoers.d/keyboard-key-display
+fi
+
+exit 0
+EOF
+chmod +x "${DEB_DIR}/DEBIAN/postrm"
 
 # Build the package
 dpkg-deb --build "${DEB_DIR}"
