@@ -34,9 +34,12 @@ cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
 #!/bin/bash
 cd /usr/share/keyboard-key-display
 
+# Pass display environment variables to root process
+ENV_ARGS="DISPLAY=$DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR WAYLAND_DISPLAY=$WAYLAND_DISPLAY XAUTHORITY=$XAUTHORITY"
+
 # Try pkexec first (graphical sudo)
 if command -v pkexec &> /dev/null; then
-    pkexec /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
+    pkexec env $ENV_ARGS /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
 else
     sudo -E /usr/bin/python3 /usr/share/keyboard-key-display/key_display.py "$@"
 fi
@@ -78,7 +81,6 @@ chmod 440 "${DEB_DIR}/etc/sudoers.d/keyboard-key-display"
 # Create desktop entry
 cat > "${DEB_DIR}/usr/share/applications/${PACKAGE_NAME}.desktop" << EOF
 [Desktop Entry]
-Name=Keyboard Key Display
 Comment=Display keyboard keys on screen
 Exec=${PACKAGE_NAME}
 Type=Application
