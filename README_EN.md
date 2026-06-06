@@ -1,6 +1,11 @@
+<div align="center">
+
 # Keyboard Key Display
 
 A Linux desktop keyboard key display application that listens to global keyboard input even when the window is not focused, and displays the currently pressed keys using a visual keyboard layout.
+
+</div>
+
 
 ## Features
 
