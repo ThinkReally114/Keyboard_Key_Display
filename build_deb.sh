@@ -2,7 +2,7 @@
 set -e
 
 PACKAGE_NAME="keyboard-key-display"
-VERSION="0.0.1"
+VERSION="0.0.2"
 ARCH="all"
 MAINTAINER="ThinkReally <2507164880@qq.com>"
 DESCRIPTION="Linux desktop keyboard key display application"
