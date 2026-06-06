@@ -4,6 +4,7 @@
 
 A Linux desktop keyboard key display application that listens to global keyboard input even when the window is not focused, and displays the currently pressed keys using a visual keyboard layout.
 
+When starting, it will request permissions. Rest assured, our code is harmless, and you are free to review it.
 </div>
 
 
