@@ -1,6 +1,13 @@
+**简体中文** | [English](README_EN.md)
+
+<div align="center">
+
 # Keyboard Key Display
 
 一个 Linux 的桌面键盘按键显示器，可以在窗口未获得焦点时全局监听键盘输入，并用可视化键盘布局显示当前按下的按键。
+
+</div>
+
 
 ## 功能特性
 
