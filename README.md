@@ -1,3 +1,6 @@
+**English** | [简体中文](README_CH.md)
+
+
 <div align="center">
 
 # Keyboard Key Display
