@@ -395,9 +395,11 @@ class KeyButton:
         return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
 
 
+import copy
+
+
 def create_default_config():
     """Create a deep copy of default config"""
-    import copy
     return copy.deepcopy(DEFAULT_CONFIG)
 
 
@@ -1429,7 +1431,8 @@ class KeyDisplayApp:
         self.root.attributes('-alpha', alpha)
 
         if progress < 1.0:
-            self.root.after(16, lambda: self._animate_window_frame(duration))
+            if self.root.winfo_exists():
+                self.root.after(16, lambda: self._animate_window_frame(duration))
         else:
             # Window fully visible, start button animations
             self._start_entrance_animation()
@@ -1464,7 +1467,8 @@ class KeyDisplayApp:
         self.mouse_window.attributes('-alpha', current_alpha)
 
         if progress < 1.0:
-            self.root.after(16, lambda: self._animate_mouse_window_frame(duration))
+            if self.root.winfo_exists():
+                self.root.after(16, lambda: self._animate_mouse_window_frame(duration))
 
     def _animate_cps_entrance(self, delay, duration=0.4):
         """Animate CPS display entrance"""
@@ -1505,10 +1509,14 @@ class KeyDisplayApp:
         self.cps_label.itemconfig(self.cps_text, fill=faded_text)
 
         if progress < 1.0:
-            self.root.after(16, lambda: self._animate_cps_frame(duration, colors))
+            if self.root.winfo_exists():
+                self.root.after(16, lambda: self._animate_cps_frame(duration, colors))
         else:
-            self.cps_label.itemconfig(self.cps_bg_rect, outline=colors['key_border'])
-            self.cps_label.itemconfig(self.cps_text, fill=colors['key_idle'])
+            try:
+                self.cps_label.itemconfig(self.cps_bg_rect, outline=colors['key_border'])
+                self.cps_label.itemconfig(self.cps_text, fill=colors['key_idle'])
+            except tk.TclError:
+                pass
 
     def _animate_mouse_direction_entrance(self, delay, duration=0.4):
         """Animate mouse direction canvas entrance"""
@@ -1543,11 +1551,15 @@ class KeyDisplayApp:
         self.draw_mouse_direction_chart(override_color=faded_border)
 
         if progress < 1.0:
-            self.root.after(16, lambda: self._animate_mouse_direction_frame(duration, colors))
+            if self.root.winfo_exists():
+                self.root.after(16, lambda: self._animate_mouse_direction_frame(duration, colors))
         else:
             # Redraw with final colors and start decay
-            self.draw_mouse_direction_chart()
-            self.schedule_mouse_direction_decay()
+            try:
+                self.draw_mouse_direction_chart()
+                self.schedule_mouse_direction_decay()
+            except tk.TclError:
+                pass
 
     def setup_extra_display(self):
         extra = self.config.get('extra_display', {})
@@ -1677,10 +1689,13 @@ class KeyDisplayApp:
         for widget in [self.mouse_canvas, self.mouse_frame, self.mouse_direction_canvas, self.cps_label, *self.mouse_buttons.values()]:
             if widget is None:
                 continue
-            target = widget.canvas if isinstance(widget, KeyButton) else widget
-            target.bind('<Button-1>', self.start_mouse_window_drag)
-            target.bind('<B1-Motion>', self.on_mouse_window_drag)
-            target.bind('<ButtonRelease-1>', self.stop_mouse_window_drag)
+            try:
+                target = widget.canvas if isinstance(widget, KeyButton) else widget
+                target.bind('<Button-1>', self.start_mouse_window_drag)
+                target.bind('<B1-Motion>', self.on_mouse_window_drag)
+                target.bind('<ButtonRelease-1>', self.stop_mouse_window_drag)
+            except tk.TclError:
+                pass
 
     def start_mouse_window_drag(self, event):
         if self.mouse_window is None:
@@ -1943,15 +1958,19 @@ class KeyDisplayApp:
     def schedule_mouse_direction_decay(self):
         if self.mouse_direction_canvas is None or not self.running:
             return
-        decay = max(self.config.get('extra_display', {}).get('mouse_direction_decay', 1.25), 1.01)
-        self.mouse_direction_vector[0] /= decay
-        self.mouse_direction_vector[1] /= decay
-        if abs(self.mouse_direction_vector[0]) < 0.5:
-            self.mouse_direction_vector[0] = 0
-        if abs(self.mouse_direction_vector[1]) < 0.5:
-            self.mouse_direction_vector[1] = 0
-        self.draw_mouse_direction_chart()
-        self.mouse_direction_job = self.root.after(80, self.schedule_mouse_direction_decay)
+        try:
+            decay = max(self.config.get('extra_display', {}).get('mouse_direction_decay', 1.25), 1.01)
+            self.mouse_direction_vector[0] /= decay
+            self.mouse_direction_vector[1] /= decay
+            if abs(self.mouse_direction_vector[0]) < 0.5:
+                self.mouse_direction_vector[0] = 0
+            if abs(self.mouse_direction_vector[1]) < 0.5:
+                self.mouse_direction_vector[1] = 0
+            self.draw_mouse_direction_chart()
+            if self.root.winfo_exists():
+                self.mouse_direction_job = self.root.after(80, self.schedule_mouse_direction_decay)
+        except tk.TclError:
+            pass
 
     def on_mouse_press(self, key_name):
         extra = self.config.get('extra_display', {})
@@ -1977,9 +1996,12 @@ class KeyDisplayApp:
         self.cps_label.itemconfig(self.cps_text, text=f"L CPS: {len(self.left_click_timestamps)}    R CPS: {len(self.right_click_timestamps)}")
 
     def schedule_cps_update(self):
-        self.update_cps_display()
-        if self.cps_label is not None and self.running:
-            self.cps_update_job = self.root.after(100, self.schedule_cps_update)
+        try:
+            self.update_cps_display()
+            if self.cps_label is not None and self.running and self.root.winfo_exists():
+                self.cps_update_job = self.root.after(100, self.schedule_cps_update)
+        except tk.TclError:
+            pass
         
     def on_closing(self):
         if self.closed:
@@ -2027,7 +2049,8 @@ class KeyDisplayApp:
             pass
 
         if progress < 1.0:
-            self.root.after(16, lambda: self._animate_window_exit_frame(duration))
+            if self.root.winfo_exists():
+                self.root.after(16, lambda: self._animate_window_exit_frame(duration))
         else:
             # Animation complete, destroy windows
             self._destroy_windows()
@@ -2036,12 +2059,14 @@ class KeyDisplayApp:
         """Destroy all windows after fade-out animation"""
         if self.cps_update_job is not None:
             try:
-                self.root.after_cancel(self.cps_update_job)
+                if self.root.winfo_exists():
+                    self.root.after_cancel(self.cps_update_job)
             except tk.TclError:
                 pass
         if self.mouse_direction_job is not None:
             try:
-                self.root.after_cancel(self.mouse_direction_job)
+                if self.root.winfo_exists():
+                    self.root.after_cancel(self.mouse_direction_job)
             except tk.TclError:
                 pass
         if self.mouse_window is not None:
@@ -2049,7 +2074,10 @@ class KeyDisplayApp:
                 self.mouse_window.destroy()
             except tk.TclError:
                 pass
-        self.root.destroy()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
         
     def open_config_dialog(self):
         """Open configuration dialog"""
