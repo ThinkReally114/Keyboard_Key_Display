@@ -401,12 +401,118 @@ def create_default_config():
     return copy.deepcopy(DEFAULT_CONFIG)
 
 
+class ModernSwitch(tk.Canvas):
+    """Modern toggle switch widget"""
+    def __init__(self, parent, variable, command=None, **kwargs):
+        self.variable = variable
+        self.command = command
+        self.width = kwargs.pop('width', 44)
+        self.height = kwargs.pop('height', 24)
+        super().__init__(parent, width=self.width, height=self.height, 
+                        bg='#1a1a2e', highlightthickness=0, **kwargs)
+        
+        self.bg_color_off = '#3a3a5c'
+        self.bg_color_on = '#e94560'
+        self.knob_color = '#ffffff'
+        
+        self.bind('<Button-1>', self._toggle)
+        self.variable.trace_add('write', lambda *args: self._update())
+        self._update()
+    
+    def _toggle(self, event=None):
+        self.variable.set(not self.variable.get())
+        if self.command:
+            self.command()
+    
+    def _update(self):
+        self.delete('all')
+        is_on = self.variable.get()
+        
+        # Draw background with rounded corners
+        radius = self.height // 2
+        bg_color = self.bg_color_on if is_on else self.bg_color_off
+        
+        # Create rounded rectangle
+        points = rounded_rectangle_points(2, 2, self.width-2, self.height-2, radius)
+        self.create_polygon(points, smooth=True, fill=bg_color, outline='')
+        
+        # Draw knob
+        knob_x = self.width - radius - 2 if is_on else radius + 2
+        self.create_oval(knob_x - radius + 4, 4, knob_x + radius - 4, self.height - 4,
+                        fill=self.knob_color, outline='')
+
+
+class ModernSlider(tk.Canvas):
+    """Modern slider widget with gradient track"""
+    def __init__(self, parent, variable, from_=0, to=1, command=None, **kwargs):
+        self.variable = variable
+        self.from_ = from_
+        self.to = to
+        self.command = command
+        self.width = kwargs.pop('width', 200)
+        self.height = kwargs.pop('height', 24)
+        super().__init__(parent, width=self.width, height=self.height,
+                        bg='#1a1a2e', highlightthickness=0, **kwargs)
+        
+        self.track_color = '#3a3a5c'
+        self.fill_color = '#e94560'
+        self.knob_color = '#ffffff'
+        
+        self.bind('<Button-1>', self._on_click)
+        self.bind('<B1-Motion>', self._on_drag)
+        self.variable.trace_add('write', lambda *args: self._update())
+        self._update()
+    
+    def _get_value_from_x(self, x):
+        ratio = max(0, min(1, (x - 10) / (self.width - 20)))
+        return self.from_ + ratio * (self.to - self.from_)
+    
+    def _on_click(self, event):
+        value = self._get_value_from_x(event.x)
+        self.variable.set(round(value, 2))
+        if self.command:
+            self.command()
+    
+    def _on_drag(self, event):
+        self._on_click(event)
+    
+    def _update(self):
+        self.delete('all')
+        value = self.variable.get()
+        ratio = (value - self.from_) / (self.to - self.from_)
+        fill_width = 10 + ratio * (self.width - 20)
+        
+        # Draw track background
+        self.create_line(10, self.height//2, self.width-10, self.height//2,
+                        fill=self.track_color, width=4, capstyle='round')
+        
+        # Draw filled portion
+        if ratio > 0:
+            self.create_line(10, self.height//2, fill_width, self.height//2,
+                            fill=self.fill_color, width=4, capstyle='round')
+        
+        # Draw knob
+        self.create_oval(fill_width-6, self.height//2-6, fill_width+6, self.height//2+6,
+                        fill=self.knob_color, outline='#e94560', width=2)
+
+
 class ConfigDialog:
-    """Visual configuration editor dialog"""
+    """Modern glassmorphism configuration editor dialog"""
+    
+    # Modern color scheme
+    BG_DARK = '#0d0d1a'
+    BG_CARD = '#16162a'
+    BG_CARD_HOVER = '#1e1e3a'
+    ACCENT_PRIMARY = '#e94560'
+    ACCENT_SECONDARY = '#533483'
+    ACCENT_GLOW = '#ff6b6b'
+    TEXT_PRIMARY = '#ffffff'
+    TEXT_SECONDARY = '#a0a0b8'
+    BORDER_COLOR = '#2a2a4a'
+    
     def __init__(self, parent_app):
         self.app = parent_app
         self.config = create_default_config()
-        # Merge current app config
         for section in self.app.config:
             if isinstance(self.app.config[section], dict):
                 self.config[section].update(self.app.config[section])
@@ -414,13 +520,19 @@ class ConfigDialog:
                 self.config[section] = self.app.config[section]
 
         self.dialog = tk.Toplevel(self.app.root)
-        self.dialog.title("Configuration - Keyboard Key Display")
-        self.dialog.geometry("650x550")
-        self.dialog.configure(bg='#1a1a2e')
+        self.dialog.title("Settings")
+        self.dialog.geometry("720x600")
+        self.dialog.configure(bg=self.BG_DARK)
         self.dialog.resizable(True, True)
         self.dialog.transient(self.app.root)
         self.app.config_dialog_open = True
         self.dialog.protocol("WM_DELETE_WINDOW", self._on_close)
+        
+        # Center dialog
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() - 720) // 2
+        y = (self.dialog.winfo_screenheight() - 600) // 2
+        self.dialog.geometry(f"+{x}+{y}")
 
         self.color_widgets = {}
         self.tabs = {}
@@ -428,256 +540,583 @@ class ConfigDialog:
         self._build_ui()
 
     def _build_ui(self):
-        # Tab buttons frame
-        tab_frame = tk.Frame(self.dialog, bg='#1a1a2e')
-        tab_frame.pack(fill='x', padx=10, pady=(10, 0))
-
+        # Main container with padding
+        main_container = tk.Frame(self.dialog, bg=self.BG_DARK)
+        main_container.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title
+        title_frame = tk.Frame(main_container, bg=self.BG_DARK)
+        title_frame.pack(fill='x', pady=(0, 20))
+        tk.Label(title_frame, text="Settings", font=('Noto Sans', 24, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_DARK).pack(side='left')
+        
+        # Tab buttons frame - modern pill style
+        tab_frame = tk.Frame(main_container, bg=self.BG_DARK)
+        tab_frame.pack(fill='x', pady=(0, 15))
+        
         self.tab_buttons = {}
         tab_names = ['Window', 'Colors', 'Keyboard', 'Extra', 'Layout']
         for i, name in enumerate(tab_names):
-            btn = tk.Button(
+            btn = tk.Label(
                 tab_frame,
                 text=name,
-                bg='#0f3460',
-                fg='white',
-                activebackground='#e94560',
-                activeforeground='white',
-                bd=0,
-                padx=15,
-                pady=5,
-                font=('Noto Sans', 10),
+                bg=self.BG_CARD,
+                fg=self.TEXT_SECONDARY,
+                font=('Noto Sans', 11),
+                padx=20,
+                pady=8,
                 cursor='hand2'
             )
-            btn.pack(side='left', padx=(0, 5))
-            btn.config(command=lambda n=name: self._switch_tab(n))
+            btn.pack(side='left', padx=(0, 8))
+            btn.bind('<Enter>', lambda e, b=btn: b.config(bg=self.BG_CARD_HOVER))
+            btn.bind('<Leave>', lambda e, b=btn, n=name: b.config(
+                bg=self.ACCENT_PRIMARY if self.current_tab == n else self.BG_CARD))
+            btn.bind('<Button-1>', lambda e, n=name: self._switch_tab(n))
             self.tab_buttons[name] = btn
-
-        # Content frame
-        self.content_frame = tk.Frame(self.dialog, bg='#1a1a2e')
-        self.content_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
+        
+        # Content frame - card style
+        self.content_frame = tk.Frame(main_container, bg=self.BG_CARD,
+                                     highlightbackground=self.BORDER_COLOR,
+                                     highlightthickness=1)
+        self.content_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
         # Build all tab contents
         self._build_window_content()
         self._build_colors_content()
         self._build_keyboard_content()
         self._build_extra_content()
         self._build_layout_content()
-
+        
         # Show first tab
         self._switch_tab('Window')
-
-        # Buttons
-        btn_frame = tk.Frame(self.dialog, bg='#1a1a2e')
-        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
-
-        tk.Button(btn_frame, text="Reset", bg='#0f3460', fg='white',
-                  activebackground='#e94560', bd=0, padx=15, pady=5,
-                  command=self._reset).pack(side='left', padx=5)
-        tk.Button(btn_frame, text="Cancel", bg='#0f3460', fg='white',
-                  activebackground='#e94560', bd=0, padx=15, pady=5,
-                  command=self._on_close).pack(side='right', padx=5)
-        tk.Button(btn_frame, text="Save", bg='#0f3460', fg='white',
-                  activebackground='#e94560', bd=0, padx=15, pady=5,
-                  command=self._save).pack(side='right', padx=5)
-        tk.Button(btn_frame, text="Apply", bg='#0f3460', fg='white',
-                  activebackground='#e94560', bd=0, padx=15, pady=5,
-                  command=self._apply).pack(side='right', padx=5)
+        
+        # Buttons frame - modern style
+        btn_frame = tk.Frame(main_container, bg=self.BG_DARK)
+        btn_frame.pack(fill='x')
+        
+        # Reset button - outlined style
+        reset_btn = tk.Label(btn_frame, text="Reset to Default", 
+                            bg=self.BG_DARK, fg=self.ACCENT_PRIMARY,
+                            font=('Noto Sans', 11), padx=20, pady=10,
+                            cursor='hand2', highlightbackground=self.ACCENT_PRIMARY,
+                            highlightthickness=1)
+        reset_btn.pack(side='left')
+        reset_btn.bind('<Enter>', lambda e: reset_btn.config(bg=self.BG_CARD))
+        reset_btn.bind('<Leave>', lambda e: reset_btn.config(bg=self.BG_DARK))
+        reset_btn.bind('<Button-1>', lambda e: self._reset())
+        
+        # Cancel button
+        cancel_btn = tk.Label(btn_frame, text="Cancel",
+                             bg=self.BG_DARK, fg=self.TEXT_SECONDARY,
+                             font=('Noto Sans', 11), padx=20, pady=10,
+                             cursor='hand2')
+        cancel_btn.pack(side='right', padx=(10, 0))
+        cancel_btn.bind('<Enter>', lambda e: cancel_btn.config(fg=self.TEXT_PRIMARY))
+        cancel_btn.bind('<Leave>', lambda e: cancel_btn.config(fg=self.TEXT_SECONDARY))
+        cancel_btn.bind('<Button-1>', lambda e: self._on_close())
+        
+        # Save button - primary style
+        save_btn = tk.Label(btn_frame, text="Save Changes",
+                           bg=self.ACCENT_PRIMARY, fg=self.TEXT_PRIMARY,
+                           font=('Noto Sans', 11, 'bold'), padx=25, pady=10,
+                           cursor='hand2')
+        save_btn.pack(side='right', padx=(10, 0))
+        save_btn.bind('<Enter>', lambda e: save_btn.config(bg=self.ACCENT_GLOW))
+        save_btn.bind('<Leave>', lambda e: save_btn.config(bg=self.ACCENT_PRIMARY))
+        save_btn.bind('<Button-1>', lambda e: self._save())
 
     def _switch_tab(self, name):
-        """Switch to specified tab"""
+        """Switch to specified tab with animation"""
         # Hide all tabs
         for tab in self.tabs.values():
             tab.pack_forget()
         # Show selected tab
-        self.tabs[name].pack(fill='both', expand=True)
+        self.tabs[name].pack(fill='both', expand=True, padx=20, pady=20)
         self.current_tab = name
         # Update button colors
         for tab_name, btn in self.tab_buttons.items():
             if tab_name == name:
-                btn.config(bg='#e94560')
+                btn.config(bg=self.ACCENT_PRIMARY, fg=self.TEXT_PRIMARY)
             else:
-                btn.config(bg='#0f3460')
+                btn.config(bg=self.BG_CARD, fg=self.TEXT_SECONDARY)
 
     def _build_window_content(self):
-        frame = tk.Frame(self.content_frame, bg='#1a1a2e')
+        """Build modern window settings tab"""
+        frame = tk.Frame(self.content_frame, bg=self.BG_CARD)
         self.tabs['Window'] = frame
-
-        row = 0
-        tk.Label(frame, text="Alpha (transparency):", bg='#1a1a2e', fg='white',
-                 font=('Noto Sans', 10)).grid(row=row, column=0, sticky='w', padx=10, pady=8)
+        
+        # Section title
+        tk.Label(frame, text="Window Appearance", font=('Noto Sans', 16, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 20))
+        
+        # Settings container
+        settings_container = tk.Frame(frame, bg=self.BG_CARD)
+        settings_container.pack(fill='x')
+        
+        # Alpha slider
+        self._create_setting_row(settings_container, "Transparency", 0)
         self.alpha_var = tk.DoubleVar(value=self.config['window']['alpha'])
-        alpha_frame = tk.Frame(frame, bg='#1a1a2e')
-        alpha_frame.grid(row=row, column=1, sticky='ew', padx=10, pady=8)
-        tk.Scale(alpha_frame, from_=0.1, to=1.0, variable=self.alpha_var,
-                 orient='horizontal', bg='#1a1a2e', fg='white',
-                 highlightthickness=0, length=200).pack(side='left')
-        self.alpha_label = tk.Label(alpha_frame, text=f"{self.alpha_var.get():.2f}",
-                                     bg='#1a1a2e', fg='white', width=6)
-        self.alpha_label.pack(side='left', padx=5)
-        self.alpha_var.trace_add('write', lambda *a: self.alpha_label.config(text=f"{self.alpha_var.get():.2f}"))
-
-        row += 1
+        alpha_slider = ModernSlider(settings_container, self.alpha_var, from_=0.1, to=1.0)
+        alpha_slider.pack(fill='x', pady=(5, 15))
+        
+        # Value label
+        alpha_value_label = tk.Label(settings_container, 
+                                     text=f"{self.alpha_var.get():.0%}",
+                                     fg=self.TEXT_SECONDARY, bg=self.BG_CARD,
+                                     font=('Noto Sans', 10))
+        alpha_value_label.pack(anchor='e')
+        self.alpha_var.trace_add('write', 
+            lambda *a: alpha_value_label.config(text=f"{self.alpha_var.get():.0%}"))
+        
+        # Divider
+        self._create_divider(settings_container)
+        
+        # Toggle switches section
+        toggles_frame = tk.Frame(settings_container, bg=self.BG_CARD)
+        toggles_frame.pack(fill='x', pady=10)
+        
+        # Always on top toggle
         self.always_on_top_var = tk.BooleanVar(value=self.config['window']['always_on_top'])
-        tk.Checkbutton(frame, text="Always on top", variable=self.always_on_top_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=row, column=0, columnspan=2, sticky='w', padx=10, pady=8)
-
-        row += 1
+        self._create_toggle_row(toggles_frame, "Always on top", self.always_on_top_var, 0)
+        
+        # Frameless toggle
         self.frameless_var = tk.BooleanVar(value=self.config['window'].get('frameless', True))
-        tk.Checkbutton(frame, text="Frameless window", variable=self.frameless_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=row, column=0, columnspan=2, sticky='w', padx=10, pady=8)
-
-        row += 1
-        tk.Label(frame, text="Corner radius:", bg='#1a1a2e', fg='white',
-                 font=('Noto Sans', 10)).grid(row=row, column=0, sticky='w', padx=10, pady=8)
+        self._create_toggle_row(toggles_frame, "Frameless window", self.frameless_var, 1)
+        
+        # Divider
+        self._create_divider(settings_container)
+        
+        # Corner radius slider
+        self._create_setting_row(settings_container, "Corner Radius", 2)
         self.corner_radius_var = tk.IntVar(value=self.config['window'].get('corner_radius', 14))
-        tk.Spinbox(frame, from_=0, to=50, textvariable=self.corner_radius_var,
-                   width=10, bg='#0f3460', fg='white').grid(row=row, column=1, sticky='w', padx=10, pady=8)
-
-        frame.columnconfigure(1, weight=1)
+        radius_slider = ModernSlider(settings_container, self.corner_radius_var, from_=0, to=50)
+        radius_slider.pack(fill='x', pady=(5, 15))
+        
+        # Value label
+        radius_value_label = tk.Label(settings_container,
+                                      text=f"{self.corner_radius_var.get()}px",
+                                      fg=self.TEXT_SECONDARY, bg=self.BG_CARD,
+                                      font=('Noto Sans', 10))
+        radius_value_label.pack(anchor='e')
+        self.corner_radius_var.trace_add('write',
+            lambda *a: radius_value_label.config(text=f"{self.corner_radius_var.get()}px"))
+    
+    def _create_setting_row(self, parent, label_text, row):
+        """Create a setting label row"""
+        row_frame = tk.Frame(parent, bg=self.BG_CARD)
+        row_frame.pack(fill='x', pady=(15, 5))
+        tk.Label(row_frame, text=label_text, font=('Noto Sans', 13),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(side='left')
+    
+    def _create_toggle_row(self, parent, label_text, variable, row):
+        """Create a modern toggle switch row"""
+        row_frame = tk.Frame(parent, bg=self.BG_CARD)
+        row_frame.pack(fill='x', pady=8)
+        
+        tk.Label(row_frame, text=label_text, font=('Noto Sans', 12),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(side='left')
+        
+        ModernSwitch(row_frame, variable).pack(side='right')
+    
+    def _create_divider(self, parent):
+        """Create a horizontal divider line"""
+        divider = tk.Frame(parent, height=1, bg=self.BORDER_COLOR)
+        divider.pack(fill='x', pady=10)
 
     def _build_colors_content(self):
-        canvas = tk.Canvas(self.content_frame, bg='#1a1a2e', highlightthickness=0)
-        self.tabs['Colors'] = canvas
-
-        scrollbar = tk.Scrollbar(canvas, orient='vertical', command=canvas.yview)
-        inner = tk.Frame(canvas, bg='#1a1a2e')
+        """Build modern colors settings tab with color cards"""
+        # Create main container with scrollbar
+        container = tk.Frame(self.content_frame, bg=self.BG_CARD)
+        self.tabs['Colors'] = container
+        
+        # Section title
+        tk.Label(container, text="Color Scheme", font=('Noto Sans', 16, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 20))
+        
+        # Create scrollable canvas for colors
+        canvas_frame = tk.Frame(container, bg=self.BG_CARD)
+        canvas_frame.pack(fill='both', expand=True)
+        
+        canvas = tk.Canvas(canvas_frame, bg=self.BG_CARD, highlightthickness=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient='vertical', command=canvas.yview)
+        inner = tk.Frame(canvas, bg=self.BG_CARD)
+        
         inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.create_window((0, 0), window=inner, anchor='nw')
+        canvas_window = canvas.create_window((0, 0), window=inner, anchor='nw', width=640)
         canvas.configure(yscrollcommand=scrollbar.set)
-
+        
+        # Mouse wheel scrolling
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), 'units')
+        canvas.bind_all('<MouseWheel>', on_mousewheel)
+        
         colors = self.config['colors']
+        color_groups = {
+            'Window': ['background', 'border', 'title_bar'],
+            'Text': ['text', 'text_glow'],
+            'Keys': ['key_idle', 'key_active', 'key_text', 'key_border'],
+            'UI Elements': ['status_online', 'close_button', 'close_button_hover', 'mouse_direction_trace']
+        }
+        
         color_labels = {
             'background': 'Background', 'border': 'Border', 'title_bar': 'Title Bar',
-            'text': 'Title Text', 'text_glow': 'Text Glow', 'key_idle': 'Key Idle Text',
-            'key_active': 'Key Active', 'key_text': 'Key Active Text', 'key_border': 'Key Border',
-            'status_online': 'Status Dot', 'close_button': 'Close Button',
+            'text': 'Title Text', 'text_glow': 'Text Glow', 'key_idle': 'Key Idle',
+            'key_active': 'Key Active', 'key_text': 'Key Text', 'key_border': 'Key Border',
+            'status_online': 'Status Online', 'close_button': 'Close Button',
             'close_button_hover': 'Close Hover', 'mouse_direction_trace': 'Mouse Trace'
         }
-
+        
         self.color_widgets = {}
-        for idx, (key, label) in enumerate(color_labels.items()):
-            row = idx // 2
-            col = (idx % 2) * 4
-            tk.Label(inner, text=f"{label}:", bg='#1a1a2e', fg='white').grid(
-                row=row, column=col, sticky='w', padx=(10, 2), pady=4)
-            var = tk.StringVar(value=colors.get(key, '#000000'))
-            entry = tk.Entry(inner, textvariable=var, width=10, bg='#0f3460', fg='white')
-            entry.grid(row=row, column=col + 1, padx=2, pady=4)
-            preview = tk.Canvas(inner, width=24, height=24, bg=colors.get(key, '#000000'),
-                                highlightthickness=1, highlightbackground='white')
-            preview.grid(row=row, column=col + 2, padx=(2, 10), pady=4)
-            var.trace_add('write', lambda *a, v=var, p=preview: self._update_preview(p, v))
-            btn = tk.Button(inner, text="...", width=3, bg='#0f3460', fg='white',
-                            activebackground='#e94560', bd=0,
-                            command=lambda v=var, p=preview: self._pick_color(v, p))
-            btn.grid(row=row, column=col + 3, padx=(0, 5), pady=4)
-            self.color_widgets[key] = var
+        
+        for group_name, group_colors in color_groups.items():
+            # Group title
+            group_frame = tk.Frame(inner, bg=self.BG_CARD)
+            group_frame.pack(fill='x', pady=(15, 10), anchor='w')
+            
+            tk.Label(group_frame, text=group_name, font=('Noto Sans', 14, 'bold'),
+                    fg=self.ACCENT_PRIMARY, bg=self.BG_CARD).pack(anchor='w')
+            
+            # Color cards grid
+            cards_frame = tk.Frame(inner, bg=self.BG_CARD)
+            cards_frame.pack(fill='x', pady=5)
+            
+            for idx, key in enumerate(group_colors):
+                if key not in color_labels:
+                    continue
+                    
+                # Color card
+                card = tk.Frame(cards_frame, bg=self.BG_CARD_HOVER,
+                               highlightbackground=self.BORDER_COLOR,
+                               highlightthickness=1)
+                card.grid(row=idx//2, column=idx%2, padx=5, pady=5, sticky='ew')
+                cards_frame.grid_columnconfigure(0, weight=1)
+                cards_frame.grid_columnconfigure(1, weight=1)
+                
+                # Color preview circle
+                var = tk.StringVar(value=colors.get(key, '#000000'))
+                preview_canvas = tk.Canvas(card, width=40, height=40, 
+                                          bg=self.BG_CARD_HOVER, highlightthickness=0)
+                preview_canvas.pack(side='left', padx=10, pady=10)
+                
+                color_val = colors.get(key, '#000000')
+                preview_circle = preview_canvas.create_oval(4, 4, 36, 36, 
+                                                           fill=color_val, outline='')
+                
+                # Label and hex value
+                info_frame = tk.Frame(card, bg=self.BG_CARD_HOVER)
+                info_frame.pack(side='left', fill='y', expand=True, pady=10)
+                
+                tk.Label(info_frame, text=color_labels[key], font=('Noto Sans', 11),
+                        fg=self.TEXT_PRIMARY, bg=self.BG_CARD_HOVER).pack(anchor='w')
+                
+                hex_label = tk.Label(info_frame, text=color_val.upper(), 
+                                    font=('Noto Sans', 10, 'bold'),
+                                    fg=self.TEXT_SECONDARY, bg=self.BG_CARD_HOVER)
+                hex_label.pack(anchor='w')
+                
+                # Edit button
+                edit_btn = tk.Label(card, text="Edit", font=('Noto Sans', 10),
+                                   fg=self.ACCENT_PRIMARY, bg=self.BG_CARD_HOVER,
+                                   cursor='hand2', padx=15, pady=5)
+                edit_btn.pack(side='right', padx=10)
+                edit_btn.bind('<Enter>', lambda e, b=edit_btn: b.config(fg=self.ACCENT_GLOW))
+                edit_btn.bind('<Leave>', lambda e, b=edit_btn: b.config(fg=self.ACCENT_PRIMARY))
+                edit_btn.bind('<Button-1>', lambda e, v=var, p=preview_canvas, c=preview_circle, h=hex_label: 
+                             self._pick_color_modern(v, p, c, h))
+                
+                self.color_widgets[key] = var
+        
+        canvas.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
 
-    def _update_preview(self, preview, var):
-        try:
-            color = var.get()
-            if color.startswith('#') and len(color) == 7:
-                preview.configure(bg=color)
-        except tk.TclError:
-            pass
-
-    def _pick_color(self, var, preview):
-        color = colorchooser.askcolor(color=var.get(), parent=self.dialog)
+    def _pick_color_modern(self, var, preview_canvas, preview_circle, hex_label):
+        """Modern color picker with live preview"""
+        color = colorchooser.askcolor(color=var.get(), parent=self.dialog,
+                                     title="Choose Color")
         if color and color[1]:
             var.set(color[1])
-            preview.configure(bg=color[1])
+            preview_canvas.itemconfig(preview_circle, fill=color[1])
+            hex_label.config(text=color[1].upper())
 
     def _build_keyboard_content(self):
-        frame = tk.Frame(self.content_frame, bg='#1a1a2e')
+        """Build modern keyboard settings tab"""
+        frame = tk.Frame(self.content_frame, bg=self.BG_CARD)
         self.tabs['Keyboard'] = frame
+
+        # Section title
+        tk.Label(frame, text="Keyboard Layout", font=('Noto Sans', 16, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 20))
 
         kb = self.config['keyboard']
         fields = [
-            ('key_width', 'Key Width', 10, 100),
-            ('key_height', 'Key Height', 10, 100),
-            ('key_padding', 'Key Padding', 0, 20),
-            ('key_radius', 'Key Corner Radius', 0, 30),
-            ('font_size', 'Font Size', 6, 24),
+            ('key_width', 'Key Width', 10, 100, 'px'),
+            ('key_height', 'Key Height', 10, 100, 'px'),
+            ('key_padding', 'Key Padding', 0, 20, 'px'),
+            ('key_radius', 'Corner Radius', 0, 30, 'px'),
+            ('font_size', 'Font Size', 6, 24, 'pt'),
         ]
         self.kb_vars = {}
-        for idx, (key, label, lo, hi) in enumerate(fields):
-            tk.Label(frame, text=f"{label}:", bg='#1a1a2e', fg='white',
-                     font=('Noto Sans', 10)).grid(row=idx, column=0, sticky='w', padx=10, pady=8)
+
+        # Create cards for each setting
+        for idx, (key, label, lo, hi, unit) in enumerate(fields):
+            card = tk.Frame(frame, bg=self.BG_CARD_HOVER,
+                           highlightbackground=self.BORDER_COLOR,
+                           highlightthickness=1)
+            card.pack(fill='x', pady=8)
+
+            # Label row
+            label_frame = tk.Frame(card, bg=self.BG_CARD_HOVER)
+            label_frame.pack(fill='x', padx=15, pady=(10, 5))
+
+            tk.Label(label_frame, text=label, font=('Noto Sans', 12),
+                    fg=self.TEXT_PRIMARY, bg=self.BG_CARD_HOVER).pack(side='left')
+
             var = tk.IntVar(value=kb.get(key, 42))
-            tk.Spinbox(frame, from_=lo, to=hi, textvariable=var, width=10,
-                       bg='#0f3460', fg='white').grid(row=idx, column=1, sticky='w', padx=10, pady=8)
+            value_label = tk.Label(label_frame, text=f"{var.get()}{unit}",
+                                  font=('Noto Sans', 11, 'bold'),
+                                  fg=self.ACCENT_PRIMARY, bg=self.BG_CARD_HOVER)
+            value_label.pack(side='right')
+
+            # Slider
+            slider = ModernSlider(card, var, from_=lo, to=hi, width=560)
+            slider.pack(fill='x', padx=15, pady=(0, 15))
+
+            # Update value label on change
+            var.trace_add('write', lambda *a, v=var, l=value_label, u=unit: 
+                         l.config(text=f"{int(v.get())}{u}"))
+
             self.kb_vars[key] = var
 
-        frame.columnconfigure(1, weight=1)
-
     def _build_extra_content(self):
-        frame = tk.Frame(self.content_frame, bg='#1a1a2e')
+        """Build modern extra settings tab"""
+        frame = tk.Frame(self.content_frame, bg=self.BG_CARD)
         self.tabs['Extra'] = frame
 
+        # Section title
+        tk.Label(frame, text="Extra Features", font=('Noto Sans', 16, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 20))
+
         extra = self.config.get('extra_display', {})
+
+        # Features section
+        features_frame = tk.Frame(frame, bg=self.BG_CARD)
+        features_frame.pack(fill='x', pady=10)
+
+        tk.Label(features_frame, text="Display Options", font=('Noto Sans', 14, 'bold'),
+                fg=self.ACCENT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 10))
+
+        # Toggle options
         self.show_mouse_var = tk.BooleanVar(value=extra.get('show_mouse', False))
         self.show_cps_var = tk.BooleanVar(value=extra.get('show_cps', False))
         self.show_mouse_direction_var = tk.BooleanVar(value=extra.get('show_mouse_direction', False))
         self.show_mouse_trace_var = tk.BooleanVar(value=extra.get('show_mouse_trace', True))
+
+        toggles = [
+            ("Show mouse buttons", self.show_mouse_var, "Display left and right mouse buttons"),
+            ("Show CPS counter", self.show_cps_var, "Display clicks per second"),
+            ("Show direction chart", self.show_mouse_direction_var, "Visualize mouse movement direction"),
+            ("Show mouse trace", self.show_mouse_trace_var, "Show mouse movement trail"),
+        ]
+
+        for label, var, desc in toggles:
+            self._create_feature_toggle(features_frame, label, var, desc)
+
+        # Divider
+        self._create_divider(frame)
+
+        # Advanced settings
+        advanced_frame = tk.Frame(frame, bg=self.BG_CARD)
+        advanced_frame.pack(fill='x', pady=10)
+
+        tk.Label(advanced_frame, text="Advanced", font=('Noto Sans', 14, 'bold'),
+                fg=self.ACCENT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 10))
+
+        # Direction decay slider
         self.mouse_direction_decay_var = tk.DoubleVar(value=extra.get('mouse_direction_decay', 1.25))
 
-        tk.Checkbutton(frame, text="Show mouse buttons", variable=self.show_mouse_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=0, column=0, columnspan=2, sticky='w', padx=10, pady=8)
+        decay_card = tk.Frame(advanced_frame, bg=self.BG_CARD_HOVER,
+                             highlightbackground=self.BORDER_COLOR,
+                             highlightthickness=1)
+        decay_card.pack(fill='x', pady=8)
 
-        tk.Checkbutton(frame, text="Show CPS", variable=self.show_cps_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=1, column=0, columnspan=2, sticky='w', padx=10, pady=8)
+        label_frame = tk.Frame(decay_card, bg=self.BG_CARD_HOVER)
+        label_frame.pack(fill='x', padx=15, pady=(10, 5))
 
-        tk.Checkbutton(frame, text="Show mouse direction chart", variable=self.show_mouse_direction_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=2, column=0, columnspan=2, sticky='w', padx=10, pady=8)
+        tk.Label(label_frame, text="Direction Decay", font=('Noto Sans', 12),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD_HOVER).pack(side='left')
 
-        tk.Checkbutton(frame, text="Show mouse trace", variable=self.show_mouse_trace_var,
-                       bg='#1a1a2e', fg='white', selectcolor='#0f3460',
-                       activebackground='#1a1a2e', activeforeground='white').grid(
-            row=3, column=0, columnspan=2, sticky='w', padx=10, pady=8)
+        decay_value_label = tk.Label(label_frame, text=f"{self.mouse_direction_decay_var.get():.2f}x",
+                                    font=('Noto Sans', 11, 'bold'),
+                                    fg=self.ACCENT_PRIMARY, bg=self.BG_CARD_HOVER)
+        decay_value_label.pack(side='right')
 
-        tk.Label(frame, text="Direction decay:", bg='#1a1a2e', fg='white',
-                 font=('Noto Sans', 10)).grid(row=4, column=0, sticky='w', padx=10, pady=8)
-        tk.Spinbox(frame, from_=1.01, to=5.0, increment=0.05, textvariable=self.mouse_direction_decay_var,
-                   width=10, bg='#0f3460', fg='white').grid(row=4, column=1, sticky='w', padx=10, pady=8)
+        decay_slider = ModernSlider(decay_card, self.mouse_direction_decay_var, 
+                                   from_=1.01, to=5.0, width=560)
+        decay_slider.pack(fill='x', padx=15, pady=(0, 10))
 
-        tk.Label(frame, text="CPS counts mouse clicks per second. Direction decay > 1 means stronger return-to-center damping.",
-                 bg='#1a1a2e', fg='#888888').grid(row=5, column=0, sticky='w', padx=10, pady=(5, 10))
+        self.mouse_direction_decay_var.trace_add('write',
+            lambda *a: decay_value_label.config(text=f"{self.mouse_direction_decay_var.get():.2f}x"))
 
-        frame.columnconfigure(1, weight=1)
+        # Description
+        tk.Label(advanced_frame, 
+                text="Higher decay values create stronger return-to-center damping for the direction indicator.",
+                font=('Noto Sans', 10), fg=self.TEXT_SECONDARY, bg=self.BG_CARD,
+                wraplength=600).pack(anchor='w', pady=(10, 0))
+
+    def _create_feature_toggle(self, parent, label, var, description):
+        """Create a feature toggle row with description"""
+        card = tk.Frame(parent, bg=self.BG_CARD_HOVER,
+                       highlightbackground=self.BORDER_COLOR,
+                       highlightthickness=1)
+        card.pack(fill='x', pady=6)
+
+        # Main row with toggle
+        row = tk.Frame(card, bg=self.BG_CARD_HOVER)
+        row.pack(fill='x', padx=15, pady=12)
+
+        # Text info
+        info_frame = tk.Frame(row, bg=self.BG_CARD_HOVER)
+        info_frame.pack(side='left', fill='y')
+
+        tk.Label(info_frame, text=label, font=('Noto Sans', 12),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD_HOVER).pack(anchor='w')
+
+        tk.Label(info_frame, text=description, font=('Noto Sans', 10),
+                fg=self.TEXT_SECONDARY, bg=self.BG_CARD_HOVER).pack(anchor='w')
+
+        # Toggle switch
+        ModernSwitch(row, var).pack(side='right')
 
     def _build_layout_content(self):
-        frame = tk.Frame(self.content_frame, bg='#1a1a2e')
+        """Build modern layout editor tab"""
+        frame = tk.Frame(self.content_frame, bg=self.BG_CARD)
         self.tabs['Layout'] = frame
 
-        tk.Label(frame, text="Edit keyboard layout (JSON array, one row per line):",
-                 bg='#1a1a2e', fg='white', font=('Noto Sans', 10)).pack(anchor='w', padx=10, pady=(10, 5))
+        # Section title with icon hint
+        header_frame = tk.Frame(frame, bg=self.BG_CARD)
+        header_frame.pack(fill='x', pady=(0, 15))
 
-        text_frame = tk.Frame(frame, bg='#1a1a2e')
-        text_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        tk.Label(header_frame, text="Keyboard Layout Editor", font=('Noto Sans', 16, 'bold'),
+                fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(side='left')
 
-        scrollbar = tk.Scrollbar(text_frame)
+        # Help button
+        help_btn = tk.Label(header_frame, text="?", font=('Noto Sans', 12, 'bold'),
+                           fg=self.ACCENT_PRIMARY, bg=self.BG_CARD_HOVER,
+                           cursor='hand2', padx=10, pady=2)
+        help_btn.pack(side='right')
+        help_btn.bind('<Enter>', lambda e: help_btn.config(fg=self.ACCENT_GLOW))
+        help_btn.bind('<Leave>', lambda e: help_btn.config(fg=self.ACCENT_PRIMARY))
+        help_btn.bind('<Button-1>', lambda e: self._show_layout_help())
+
+        # Editor card
+        editor_card = tk.Frame(frame, bg=self.BG_CARD_HOVER,
+                              highlightbackground=self.BORDER_COLOR,
+                              highlightthickness=1)
+        editor_card.pack(fill='both', expand=True, pady=10)
+
+        # Toolbar
+        toolbar = tk.Frame(editor_card, bg=self.BG_CARD_HOVER)
+        toolbar.pack(fill='x', padx=10, pady=(10, 0))
+
+        tk.Label(toolbar, text="JSON Format", font=('Noto Sans', 10),
+                fg=self.TEXT_SECONDARY, bg=self.BG_CARD_HOVER).pack(side='left')
+
+        # Format button
+        format_btn = tk.Label(toolbar, text="Format", font=('Noto Sans', 10),
+                             fg=self.ACCENT_PRIMARY, bg=self.BG_CARD_HOVER,
+                             cursor='hand2', padx=10)
+        format_btn.pack(side='right')
+        format_btn.bind('<Enter>', lambda e: format_btn.config(fg=self.ACCENT_GLOW))
+        format_btn.bind('<Leave>', lambda e: format_btn.config(fg=self.ACCENT_PRIMARY))
+        format_btn.bind('<Button-1>', lambda e: self._format_layout_json())
+
+        # Text editor
+        text_frame = tk.Frame(editor_card, bg=self.BG_CARD_HOVER)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Line numbers canvas
+        self.line_numbers = tk.Canvas(text_frame, width=40, bg=self.BG_CARD,
+                                     highlightthickness=0)
+        self.line_numbers.pack(side='left', fill='y')
+
+        # Text widget with custom styling
+        self.layout_text = tk.Text(text_frame, bg=self.BG_DARK, fg=self.TEXT_PRIMARY,
+                                   insertbackground=self.ACCENT_PRIMARY,
+                                   font=('JetBrains Mono', 11), wrap='none',
+                                   padx=10, pady=10, relief='flat',
+                                   selectbackground=self.ACCENT_SECONDARY,
+                                   selectforeground=self.TEXT_PRIMARY)
+        self.layout_text.pack(side='left', fill='both', expand=True)
+
+        # Scrollbar
+        scrollbar = tk.Scrollbar(text_frame, bg=self.BG_CARD, troughcolor=self.BG_CARD,
+                                activebackground=self.ACCENT_PRIMARY)
         scrollbar.pack(side='right', fill='y')
-
-        self.layout_text = tk.Text(text_frame, bg='#0f3460', fg='white', insertbackground='white',
-                                    font=('Courier', 10), wrap='none', yscrollcommand=scrollbar.set)
-        self.layout_text.pack(fill='both', expand=True)
+        self.layout_text.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=self.layout_text.yview)
 
-        layout_json = json.dumps(self.config['keyboard']['layout'], indent=4, ensure_ascii=False)
+        # Insert initial content
+        layout_json = json.dumps(self.config['keyboard']['layout'], indent=2, ensure_ascii=False)
         self.layout_text.insert('1.0', layout_json)
 
-        tk.Label(frame, text="Each row is a list of key names. Use KEY_MAP names (e.g. 'Esc', 'Q', 'Space', 'Shift').",
-                 bg='#1a1a2e', fg='#888888').pack(anchor='w', padx=10, pady=(5, 10))
+        # Update line numbers
+        self._update_line_numbers()
+        self.layout_text.bind('<KeyRelease>', lambda e: self._update_line_numbers())
+        self.layout_text.bind('<Scroll>', lambda e: self._update_line_numbers())
+
+        # Info footer
+        footer_frame = tk.Frame(frame, bg=self.BG_CARD)
+        footer_frame.pack(fill='x', pady=(10, 0))
+
+        tk.Label(footer_frame,
+                text="Tip: Each row is a JSON array of key names. Use KEY_MAP names like 'Esc', 'Q', 'Space', 'Shift'.",
+                font=('Noto Sans', 10), fg=self.TEXT_SECONDARY, bg=self.BG_CARD,
+                wraplength=600).pack(anchor='w')
+
+    def _update_line_numbers(self):
+        """Update line number display"""
+        self.line_numbers.delete('all')
+        text = self.layout_text.get('1.0', 'end')
+        lines = text.split('\n')
+        for i, _ in enumerate(lines[:-1], 1):
+            self.line_numbers.create_text(25, i * 20 - 10, text=str(i),
+                                         fill=self.TEXT_SECONDARY, font=('JetBrains Mono', 10),
+                                         anchor='e')
+
+    def _format_layout_json(self):
+        """Format the layout JSON"""
+        try:
+            content = self.layout_text.get('1.0', 'end')
+            layout = json.loads(content)
+            formatted = json.dumps(layout, indent=2, ensure_ascii=False)
+            self.layout_text.delete('1.0', 'end')
+            self.layout_text.insert('1.0', formatted)
+            self._update_line_numbers()
+        except json.JSONDecodeError as e:
+            messagebox.showerror("Invalid JSON", f"Failed to parse JSON:\n{e}", parent=self.dialog)
+
+    def _show_layout_help(self):
+        """Show layout editor help"""
+        help_text = """Keyboard Layout Format:
+
+Each row is a JSON array of key names.
+
+Available keys:
+- Letters: A-Z
+- Numbers: 0-9
+- Function: F1-F12
+- Special: Esc, Tab, Enter, Space, Backspace
+- Modifiers: Ctrl, Shift, Alt, Super, CapsLock
+- Navigation: Up, Down, Left, Right, Home, End, PageUp, PageDown
+- Mouse: Mouse Left, Mouse Right, Mouse Middle
+
+Example:
+[
+  ["Esc", "1", "2", "3"],
+  ["Tab", "Q", "W", "E"],
+  ["Ctrl", "A", "S", "D"]
+]"""
+        messagebox.showinfo("Layout Help", help_text, parent=self.dialog)
 
     def _on_close(self):
         self.app.config_dialog_open = False
@@ -709,33 +1148,44 @@ class ConfigDialog:
         return cfg
 
     def _apply(self):
+        """Apply configuration without closing"""
         try:
             cfg = self._collect_config()
             save_config(cfg)
-            messagebox.showinfo("Saved", "Configuration saved!\nPlease restart the application to apply changes.", parent=self.dialog)
+            self._show_notification("Settings saved successfully!")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save configuration:\n{e}", parent=self.dialog)
 
     def _save(self):
+        """Save configuration and close"""
         try:
             cfg = self._collect_config()
             save_config(cfg)
-            messagebox.showinfo("Saved", "Configuration saved!\nPlease restart the application to apply changes.", parent=self.dialog)
             self._on_close()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save configuration:\n{e}", parent=self.dialog)
 
     def _reset(self):
-        if messagebox.askyesno("Reset", "Reset all settings to default?\n(Keyboard layout will be preserved)", parent=self.dialog):
+        """Reset to default configuration"""
+        if messagebox.askyesno("Reset Settings", 
+                              "Reset all settings to default values?\n\nKeyboard layout will be preserved.",
+                              icon='warning', parent=self.dialog):
             try:
                 cfg = create_default_config()
-                # Preserve current keyboard layout
                 cfg['keyboard']['layout'] = self.config['keyboard']['layout']
                 save_config(cfg)
-                messagebox.showinfo("Reset", "Default configuration saved.\nPlease restart the application.", parent=self.dialog)
+                self._show_notification("Settings reset to default")
                 self._on_close()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to reset configuration:\n{e}", parent=self.dialog)
+
+    def _show_notification(self, message):
+        """Show a temporary notification"""
+        notification = tk.Label(self.dialog, text=message, 
+                               font=('Noto Sans', 11), fg=self.TEXT_PRIMARY,
+                               bg=self.ACCENT_PRIMARY, padx=20, pady=10)
+        notification.place(relx=0.5, rely=0.9, anchor='center')
+        self.dialog.after(2000, notification.destroy)
 
 
 class KeyDisplayApp:
