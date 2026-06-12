@@ -1079,13 +1079,14 @@ class ConfigDialog:
         """Update line number display"""
         try:
             if hasattr(self, 'line_numbers') and self.line_numbers.winfo_exists():
-                self.line_numbers.delete('all')
-                text = self.layout_text.get('1.0', 'end')
-                lines = text.split('\n')
-                for i, _ in enumerate(lines[:-1], 1):
-                    self.line_numbers.create_text(25, i * 20 - 10, text=str(i),
-                                                 fill=self.TEXT_SECONDARY, font=('JetBrains Mono', 10),
-                                                 anchor='e')
+                if hasattr(self, 'layout_text') and self.layout_text.winfo_exists():
+                    self.line_numbers.delete('all')
+                    text = self.layout_text.get('1.0', 'end')
+                    lines = text.split('\n')
+                    for i, _ in enumerate(lines[:-1], 1):
+                        self.line_numbers.create_text(25, i * 20 - 10, text=str(i),
+                                                     fill=self.TEXT_SECONDARY, font=('JetBrains Mono', 10),
+                                                     anchor='e')
         except (tk.TclError, AttributeError):
             # Widget might be destroyed
             pass
@@ -1099,7 +1100,8 @@ class ConfigDialog:
             self.layout_text.delete('1.0', 'end')
             self.layout_text.insert('1.0', formatted)
             # Schedule line number update after text widget updates
-            self.dialog.after(10, self._update_line_numbers)
+            if self.dialog.winfo_exists():
+                self.dialog.after(10, self._update_line_numbers)
         except json.JSONDecodeError as e:
             messagebox.showerror("Invalid JSON", f"Failed to parse JSON:\n{e}", parent=self.dialog)
 
@@ -1129,10 +1131,13 @@ Example:
     def _on_close(self):
         self.app.config_dialog_open = False
         # Unbind mousewheel to prevent memory leak
-        if hasattr(self, '_mousewheel_handler'):
+        if hasattr(self, '_mousewheel_handler') and self.dialog.winfo_exists():
             for widget in self.dialog.winfo_children():
                 if isinstance(widget, tk.Canvas):
-                    widget.unbind('<MouseWheel>')
+                    try:
+                        widget.unbind('<MouseWheel>')
+                    except tk.TclError:
+                        pass
         self.dialog.destroy()
 
     def _collect_config(self):
@@ -1195,6 +1200,8 @@ Example:
     def _show_notification(self, message):
         """Show a temporary notification"""
         try:
+            if not self.dialog.winfo_exists():
+                return
             notification = tk.Label(self.dialog, text=message,
                                    font=('Noto Sans', 11), fg=self.TEXT_PRIMARY,
                                    bg=self.ACCENT_PRIMARY, padx=20, pady=10)
