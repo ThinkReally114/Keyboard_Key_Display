@@ -4,8 +4,9 @@ set -e
 PACKAGE_NAME="keyboard-key-display"
 # Get version from git tag or use default
 VERSION=$(git describe --tags --always 2>/dev/null || echo "1.0.0")
-# Remove 'v' prefix if present
+# Remove 'v' or 'ver' prefix if present
 VERSION=${VERSION#v}
+VERSION=${VERSION#ver}
 ARCH="all"
 MAINTAINER="ThinkReally <thinkreally@example.com>"
 DESCRIPTION="Linux desktop keyboard key display application"
