@@ -8,6 +8,7 @@ import threading
 import os
 import glob
 import time
+from collections import deque
 
 
 EVENT_FORMAT = 'llHHi'
@@ -128,8 +129,10 @@ def load_config():
             with open(bundled_path, 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
             merge_config(config, file_config)
-    except Exception:
-        pass
+    except json.JSONDecodeError as e:
+        print(f"Warning: Invalid JSON in bundled config: {e}")
+    except Exception as e:
+        print(f"Warning: Failed to load bundled config: {e}")
 
     # Override with user config (if exists), otherwise create it
     try:
@@ -139,8 +142,10 @@ def load_config():
             merge_config(config, user_config)
         else:
             save_config(config)
-    except Exception:
-        pass
+    except json.JSONDecodeError as e:
+        print(f"Warning: Invalid JSON in user config: {e}")
+    except Exception as e:
+        print(f"Warning: Failed to load user config: {e}")
 
     return config
 
@@ -169,6 +174,12 @@ def rounded_rectangle_points(x1, y1, x2, y2, radius):
     ]
 
 
+def create_rounded_rect(canvas, x1, y1, x2, y2, radius, **kwargs):
+    """Create a rounded rectangle on canvas"""
+    points = rounded_rectangle_points(x1, y1, x2, y2, radius)
+    return canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
+
+
 def find_input_devices(include_mouse=False):
     """Find keyboard and optional mouse input devices"""
     input_devices = []
@@ -189,8 +200,8 @@ def find_input_devices(include_mouse=False):
                                     device_path = f'/dev/input/{handler}'
                                     if os.path.exists(device_path):
                                         input_devices.append(device_path)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: Failed to parse input devices: {e}")
     if not input_devices:
         for event_file in sorted(glob.glob('/dev/input/event*')):
             input_devices.append(event_file)
@@ -240,7 +251,8 @@ class KeyButton:
 
         # If hidden, start with transparent colors (same as background)
         if hidden:
-            self.bg_rect = self.create_rounded_rectangle(
+            self.bg_rect = create_rounded_rect(
+                self.canvas,
                 1, 1, width - 1, kb['key_height'] - 1,
                 kb['key_radius'],
                 fill=colors['background'],
@@ -255,7 +267,8 @@ class KeyButton:
                 font=('Noto Sans', kb['font_size'], 'bold')
             )
         else:
-            self.bg_rect = self.create_rounded_rectangle(
+            self.bg_rect = create_rounded_rect(
+                self.canvas,
                 1, 1, width - 1, kb['key_height'] - 1,
                 kb['key_radius'],
                 fill=colors['background'],
@@ -270,9 +283,7 @@ class KeyButton:
                 font=('Noto Sans', kb['font_size'], 'bold')
             )
         
-    def create_rounded_rectangle(self, x1, y1, x2, y2, radius, **kwargs):
-        points = rounded_rectangle_points(x1, y1, x2, y2, radius)
-        return self.canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
+
         
     def press(self):
         """Press key"""
@@ -767,7 +778,7 @@ class KeyDisplayApp:
         self.right_click_timestamps = []
         self.mouse_direction_canvas = None
         self.mouse_direction_vector = [0, 0]
-        self.mouse_trace_positions = []
+        self.mouse_trace_positions = deque(maxlen=20)
         self.mouse_direction_job = None
         self.cps_label = None
         self.cps_text = None
@@ -1143,10 +1154,9 @@ class KeyDisplayApp:
             )
             self.cps_label.grid(row=cps_row, column=0, columnspan=max(1, len(self.mouse_buttons), 2), padx=kb['key_padding'], pady=kb['key_padding'])
             # Start with transparent/hidden colors
-            self.cps_bg_rect = self.cps_label.create_polygon(
-                rounded_rectangle_points(1, 1, max(int(kb['key_width'] * 3.2), 130) - 1, kb['key_height'] - 1, kb['key_radius']),
-                smooth=True,
-                splinesteps=24,
+            self.cps_bg_rect = create_rounded_rect(
+                self.cps_label,
+                1, 1, max(int(kb['key_width'] * 3.2), 130) - 1, kb['key_height'] - 1, kb['key_radius'],
                 fill=colors['background'],
                 outline=colors['background'],  # Start hidden
                 width=1
@@ -1355,6 +1365,7 @@ class KeyDisplayApp:
                 while self.running:
                     event = f.read(EVENT_SIZE)
                     if not event:
+                        time.sleep(0.001)
                         continue
                     tv_sec, tv_usec, type_, code, value = struct.unpack(EVENT_FORMAT, event)
                     if type_ == EV_REL:
@@ -1368,7 +1379,7 @@ class KeyDisplayApp:
         except PermissionError:
             self.root.after(0, self.set_permission_warning)
         except Exception as e:
-            pass
+            print(f"Device listener error for {device_path}: {e}")
             
     def on_key_press(self, key_name):
         """Key press"""
@@ -1407,11 +1418,9 @@ class KeyDisplayApp:
         extra = self.config.get('extra_display', {})
         if extra.get('show_mouse_trace', True):
             current_time = time.time()
-            # Limit trace points: add at most one per 50ms, keep max 20 points
+            # Limit trace points: add at most one per 50ms, deque auto-limits to 20 points
             if not self.mouse_trace_positions or current_time - self.mouse_trace_positions[-1][2] > 0.05:
                 self.mouse_trace_positions.append((self.mouse_direction_vector[0], self.mouse_direction_vector[1], current_time))
-                if len(self.mouse_trace_positions) > 20:
-                    self.mouse_trace_positions.pop(0)
         self.draw_mouse_direction_chart()
 
     def draw_mouse_direction_chart(self, override_color=None):
@@ -1433,12 +1442,10 @@ class KeyDisplayApp:
         # Draw trace with fading tail
         now = time.time()
         trace_color = colors.get('mouse_direction_trace', '#e94560')
-        fresh_trace = []
         for i, (tx, ty, t) in enumerate(self.mouse_trace_positions):
             age = now - t
             if age > 0.5:
                 continue
-            fresh_trace.append((tx, ty, t))
             alpha = max(0.0, 1.0 - age / 0.5)
             length_t = max((tx * tx + ty * ty) ** 0.5, 1)
             scale_t = min(radius, length_t) / length_t
@@ -1449,7 +1456,6 @@ class KeyDisplayApp:
             faded = '#{:02x}{:02x}{:02x}'.format(int(r * alpha), int(g * alpha), int(b * alpha))
             canvas.create_oval(px - dot_size, py - dot_size, px + dot_size, py + dot_size,
                                fill=faded, outline='')
-        self.mouse_trace_positions = fresh_trace
 
         # Draw current direction dot (origin)
         dx, dy = self.mouse_direction_vector

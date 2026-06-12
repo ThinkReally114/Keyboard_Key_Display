@@ -2,9 +2,12 @@
 set -e
 
 PACKAGE_NAME="keyboard-key-display"
-VERSION="1.0.0"
+# Get version from git tag or use default
+VERSION=$(git describe --tags --always 2>/dev/null || echo "1.0.0")
+# Remove 'v' prefix if present
+VERSION=${VERSION#v}
 ARCH="all"
-MAINTAINER="Your Name <your.email@example.com>"
+MAINTAINER="ThinkReally <thinkreally@example.com>"
 DESCRIPTION="Linux desktop keyboard key display application"
 
 BUILD_DIR="build_deb"
@@ -21,7 +24,23 @@ mkdir -p "${DEB_DIR}/usr/share/icons/hicolor/256x256/apps"
 
 cp key_display.py "${DEB_DIR}/usr/share/${PACKAGE_NAME}/"
 cp config.json "${DEB_DIR}/usr/share/${PACKAGE_NAME}/"
-cp -r icons "${DEB_DIR}/usr/share/${PACKAGE_NAME}/" 2>/dev/null || true
+# Copy icons if they exist
+if [ -d "icons" ]; then
+    cp -r icons "${DEB_DIR}/usr/share/${PACKAGE_NAME}/"
+fi
+# Create default icon if not exists
+mkdir -p "${DEB_DIR}/usr/share/${PACKAGE_NAME}/icons"
+if [ ! -f "${DEB_DIR}/usr/share/${PACKAGE_NAME}/icons/${PACKAGE_NAME}.png" ]; then
+    # Create a simple placeholder icon using Python/PIL if available
+    python3 -c "
+from PIL import Image, ImageDraw
+img = Image.new('RGBA', (256, 256), (26, 26, 46, 255))
+draw = ImageDraw.Draw(img)
+draw.rounded_rectangle([40, 40, 216, 216], radius=30, fill=(233, 69, 96, 255))
+draw.text((128, 128), 'K', fill=(255, 255, 255, 255), anchor='mm', font_size=120)
+img.save('${DEB_DIR}/usr/share/${PACKAGE_NAME}/icons/${PACKAGE_NAME}.png')
+" 2>/dev/null || echo "Note: PIL not available, skipping icon generation"
+fi
 
 # Launcher - no sudo needed after udev rule is installed
 cat > "${DEB_DIR}/usr/bin/${PACKAGE_NAME}" << 'EOF'
@@ -90,6 +109,11 @@ exit 0
 EOF
 chmod +x "${DEB_DIR}/DEBIAN/postinst"
 
+# Copy icon to system icons
+if [ -f "${DEB_DIR}/usr/share/${PACKAGE_NAME}/icons/${PACKAGE_NAME}.png" ]; then
+    cp "${DEB_DIR}/usr/share/${PACKAGE_NAME}/icons/${PACKAGE_NAME}.png" "${DEB_DIR}/usr/share/icons/hicolor/256x256/apps/"
+fi
+
 # Pre-removal: clean up udev rule
 cat > "${DEB_DIR}/DEBIAN/prerm" << 'EOF'
 #!/bin/bash
@@ -103,6 +127,15 @@ fi
 exit 0
 EOF
 chmod +x "${DEB_DIR}/DEBIAN/prerm"
+
+# Update icon cache in postinst
+cat >> "${DEB_DIR}/DEBIAN/postinst" << 'EOF'
+
+# Update icon cache
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+fi
+EOF
 
 # Build
 dpkg-deb --build "${DEB_DIR}"
