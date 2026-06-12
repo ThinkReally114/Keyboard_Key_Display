@@ -748,7 +748,8 @@ class ConfigDialog:
         # Mouse wheel scrolling
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), 'units')
-        canvas.bind_all('<MouseWheel>', on_mousewheel)
+        self._mousewheel_handler = on_mousewheel
+        canvas.bind('<MouseWheel>', on_mousewheel)
         
         colors = self.config['colors']
         color_groups = {
@@ -1034,10 +1035,11 @@ class ConfigDialog:
         text_frame = tk.Frame(editor_card, bg=self.BG_CARD_HOVER)
         text_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # Line numbers canvas
-        self.line_numbers = tk.Canvas(text_frame, width=40, bg=self.BG_CARD,
-                                     highlightthickness=0)
-        self.line_numbers.pack(side='left', fill='y')
+        # Line numbers canvas - only create if not exists
+        if not hasattr(self, 'line_numbers'):
+            self.line_numbers = tk.Canvas(text_frame, width=40, bg=self.BG_CARD,
+                                         highlightthickness=0)
+            self.line_numbers.pack(side='left', fill='y')
 
         # Text widget with custom styling
         self.layout_text = tk.Text(text_frame, bg=self.BG_DARK, fg=self.TEXT_PRIMARY,
@@ -1075,13 +1077,18 @@ class ConfigDialog:
 
     def _update_line_numbers(self):
         """Update line number display"""
-        self.line_numbers.delete('all')
-        text = self.layout_text.get('1.0', 'end')
-        lines = text.split('\n')
-        for i, _ in enumerate(lines[:-1], 1):
-            self.line_numbers.create_text(25, i * 20 - 10, text=str(i),
-                                         fill=self.TEXT_SECONDARY, font=('JetBrains Mono', 10),
-                                         anchor='e')
+        try:
+            if hasattr(self, 'line_numbers') and self.line_numbers.winfo_exists():
+                self.line_numbers.delete('all')
+                text = self.layout_text.get('1.0', 'end')
+                lines = text.split('\n')
+                for i, _ in enumerate(lines[:-1], 1):
+                    self.line_numbers.create_text(25, i * 20 - 10, text=str(i),
+                                                 fill=self.TEXT_SECONDARY, font=('JetBrains Mono', 10),
+                                                 anchor='e')
+        except (tk.TclError, AttributeError):
+            # Widget might be destroyed
+            pass
 
     def _format_layout_json(self):
         """Format the layout JSON"""
@@ -1091,7 +1098,8 @@ class ConfigDialog:
             formatted = json.dumps(layout, indent=2, ensure_ascii=False)
             self.layout_text.delete('1.0', 'end')
             self.layout_text.insert('1.0', formatted)
-            self._update_line_numbers()
+            # Schedule line number update after text widget updates
+            self.dialog.after(10, self._update_line_numbers)
         except json.JSONDecodeError as e:
             messagebox.showerror("Invalid JSON", f"Failed to parse JSON:\n{e}", parent=self.dialog)
 
@@ -1120,6 +1128,11 @@ Example:
 
     def _on_close(self):
         self.app.config_dialog_open = False
+        # Unbind mousewheel to prevent memory leak
+        if hasattr(self, '_mousewheel_handler'):
+            for widget in self.dialog.winfo_children():
+                if isinstance(widget, tk.Canvas):
+                    widget.unbind('<MouseWheel>')
         self.dialog.destroy()
 
     def _collect_config(self):
@@ -1181,11 +1194,15 @@ Example:
 
     def _show_notification(self, message):
         """Show a temporary notification"""
-        notification = tk.Label(self.dialog, text=message, 
-                               font=('Noto Sans', 11), fg=self.TEXT_PRIMARY,
-                               bg=self.ACCENT_PRIMARY, padx=20, pady=10)
-        notification.place(relx=0.5, rely=0.9, anchor='center')
-        self.dialog.after(2000, notification.destroy)
+        try:
+            notification = tk.Label(self.dialog, text=message,
+                                   font=('Noto Sans', 11), fg=self.TEXT_PRIMARY,
+                                   bg=self.ACCENT_PRIMARY, padx=20, pady=10)
+            notification.place(relx=0.5, rely=0.9, anchor='center')
+            self.dialog.after(2000, notification.destroy)
+        except tk.TclError:
+            # Dialog might be destroyed
+            pass
 
 
 class KeyDisplayApp:
