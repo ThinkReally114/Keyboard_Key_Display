@@ -576,11 +576,36 @@ class ConfigDialog:
             btn.bind('<Button-1>', lambda e, n=name: self._switch_tab(n))
             self.tab_buttons[name] = btn
         
-        # Content frame - card style
-        self.content_frame = tk.Frame(main_container, bg=self.BG_CARD,
-                                     highlightbackground=self.BORDER_COLOR,
-                                     highlightthickness=1)
-        self.content_frame.pack(fill='both', expand=True, pady=(0, 15))
+        # Scrollable content area
+        content_outer = tk.Frame(main_container, bg=self.BG_CARD,
+                                highlightbackground=self.BORDER_COLOR,
+                                highlightthickness=1)
+        content_outer.pack(fill='both', expand=True, pady=(0, 15))
+        
+        # Create canvas and scrollbar for scrolling
+        self.content_canvas = tk.Canvas(content_outer, bg=self.BG_CARD, highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_outer, orient='vertical', command=self.content_canvas.yview)
+        self.content_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack scrollbar and canvas
+        scrollbar.pack(side='right', fill='y')
+        self.content_canvas.pack(side='left', fill='both', expand=True)
+        
+        # Create content frame inside canvas
+        self.content_frame = tk.Frame(self.content_canvas, bg=self.BG_CARD)
+        self.content_canvas_window = self.content_canvas.create_window((0, 0), window=self.content_frame, anchor='nw', width=660)
+        
+        # Bind mouse wheel to canvas
+        def on_mousewheel(event):
+            self.content_canvas.yview_scroll(int(-1*(event.delta/120)), 'units')
+        self._mousewheel_handler = on_mousewheel
+        self.content_canvas.bind('<MouseWheel>', on_mousewheel)
+        self.content_frame.bind('<MouseWheel>', on_mousewheel)
+        
+        # Update scroll region when content changes
+        def on_frame_configure(event=None):
+            self.content_canvas.configure(scrollregion=self.content_canvas.bbox('all'))
+        self.content_frame.bind('<Configure>', on_frame_configure)
         
         # Build all tab contents
         self._build_window_content()
@@ -641,6 +666,9 @@ class ConfigDialog:
                 btn.config(bg=self.ACCENT_PRIMARY, fg=self.TEXT_PRIMARY)
             else:
                 btn.config(bg=self.BG_CARD, fg=self.TEXT_SECONDARY)
+        # Reset scroll position to top
+        if hasattr(self, 'content_canvas'):
+            self.content_canvas.yview_moveto(0)
 
     def _build_window_content(self):
         """Build modern window settings tab"""
@@ -727,7 +755,7 @@ class ConfigDialog:
 
     def _build_colors_content(self):
         """Build modern colors settings tab with color cards"""
-        # Create main container with scrollbar
+        # Create main container (no inner scrollbar, use outer one)
         container = tk.Frame(self.content_frame, bg=self.BG_CARD)
         self.tabs['Colors'] = container
         
@@ -735,23 +763,9 @@ class ConfigDialog:
         tk.Label(container, text="Color Scheme", font=('Noto Sans', 16, 'bold'),
                 fg=self.TEXT_PRIMARY, bg=self.BG_CARD).pack(anchor='w', pady=(0, 20))
         
-        # Create scrollable canvas for colors
-        canvas_frame = tk.Frame(container, bg=self.BG_CARD)
-        canvas_frame.pack(fill='both', expand=True)
-        
-        canvas = tk.Canvas(canvas_frame, bg=self.BG_CARD, highlightthickness=0)
-        scrollbar = tk.Scrollbar(canvas_frame, orient='vertical', command=canvas.yview)
-        inner = tk.Frame(canvas, bg=self.BG_CARD)
-        
-        inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas_window = canvas.create_window((0, 0), window=inner, anchor='nw', width=640)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Mouse wheel scrolling
-        def on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), 'units')
-        self._mousewheel_handler = on_mousewheel
-        canvas.bind('<MouseWheel>', on_mousewheel)
+        # Inner frame for color groups
+        inner = tk.Frame(container, bg=self.BG_CARD)
+        inner.pack(fill='both', expand=True)
         
         colors = self.config['colors']
         color_groups = {
@@ -828,9 +842,6 @@ class ConfigDialog:
                              self._pick_color_modern(v, p, c, h))
                 
                 self.color_widgets[key] = var
-        
-        canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
 
     def _pick_color_modern(self, var, preview_canvas, preview_circle, hex_label):
         """Modern color picker with live preview"""
@@ -1133,13 +1144,12 @@ Example:
     def _on_close(self):
         self.app.config_dialog_open = False
         # Unbind mousewheel to prevent memory leak
-        if hasattr(self, '_mousewheel_handler') and self.dialog.winfo_exists():
-            for widget in self.dialog.winfo_children():
-                if isinstance(widget, tk.Canvas):
-                    try:
-                        widget.unbind('<MouseWheel>')
-                    except tk.TclError:
-                        pass
+        if hasattr(self, 'content_canvas') and self.dialog.winfo_exists():
+            try:
+                self.content_canvas.unbind('<MouseWheel>')
+                self.content_frame.unbind('<MouseWheel>')
+            except tk.TclError:
+                pass
         self.dialog.destroy()
 
     def _collect_config(self):
